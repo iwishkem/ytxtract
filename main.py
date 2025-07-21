@@ -26,6 +26,8 @@ batch_mode = False
 clipboard_monitoring = False
 download_queue = []
 current_download_index = 0
+show_resolution_popup = False
+show_audio_quality_popup = False
 
 def get_ffmpeg_path():
     if getattr(sys, 'frozen', False):
@@ -54,7 +56,9 @@ def save_settings_to_file():
             'preserve_metadata': preserve_metadata,
             'is_playlist_mode': is_playlist_mode,
             'batch_mode': batch_mode,
-            'clipboard_monitoring': clipboard_monitoring
+            'clipboard_monitoring': clipboard_monitoring,
+            'show_resolution_popup': show_resolution_popup,
+            'show_audio_quality_popup': show_audio_quality_popup
         }
         with open(settings_file, 'w') as f:
             json.dump(settings, f, indent=2)
@@ -64,7 +68,7 @@ def save_settings_to_file():
 
 def load_settings_from_file():
     global current_quality, current_format, current_download_folder, preserve_metadata, is_playlist_mode
-    global batch_mode, clipboard_monitoring
+    global batch_mode, clipboard_monitoring, show_resolution_popup, show_audio_quality_popup
     try:
         app_data_dir = get_app_data_dir()
         settings_file = os.path.join(app_data_dir, "settings.json")
@@ -79,6 +83,8 @@ def load_settings_from_file():
             is_playlist_mode = settings.get('is_playlist_mode', False)
             batch_mode = settings.get('batch_mode', False)
             clipboard_monitoring = settings.get('clipboard_monitoring', False)
+            show_resolution_popup = settings.get('show_resolution_popup', False)
+            show_audio_quality_popup = settings.get('show_audio_quality_popup', False)
             print("Settings loaded from file")
     except Exception as e:
         print(f"Error loading settings: {e}")
@@ -175,7 +181,11 @@ def batch_download_worker(url):
     global current_download_index
     try:
         ffmpeg_path = get_ffmpeg_path()
-        download_single_video(url, ffmpeg_path)
+        result = download_single_video(url, ffmpeg_path)
+        
+        if result == "CANCELLED":
+            app.after(0, lambda: status_label.configure(text="❌ Batch download cancelled"))
+            return
         
         current_download_index += 1
         app.after(0, download_next_in_queue)
@@ -217,43 +227,13 @@ def open_settings():
     
     row_counter = 0
     
-    quality_label = tk.CTkLabel(
-        scrollable_frame,
-        text="🎵 Audio Quality:",
-        font=tk.CTkFont(size=16, weight="bold"),
-        text_color=("#f0f6fc", "#f0f6fc")
-    )
-    quality_label.grid(row=row_counter, column=0, padx=30, pady=(30, 10), sticky="w")
-    row_counter += 1
-    
-    quality_var = tk.StringVar(value=current_quality)
-    
-    def on_quality_change(selected_quality):
-        global current_quality
-        current_quality = selected_quality
-        save_settings_to_file()
-    
-    quality_menu = tk.CTkOptionMenu(
-        scrollable_frame,
-        values=["128", "192", "256", "320"],
-        variable=quality_var,
-        command=on_quality_change,
-        height=40,
-        font=tk.CTkFont(size=14),
-        fg_color=("#21262d", "#21262d"),
-        button_color=("#30363d", "#30363d"),
-        button_hover_color=("#58a6ff", "#58a6ff")
-    )
-    quality_menu.grid(row=row_counter, column=0, padx=30, pady=(0, 25), sticky="ew")
-    row_counter += 1
-    
     format_label = tk.CTkLabel(
         scrollable_frame,
         text="📁 Output Format:",
         font=tk.CTkFont(size=16, weight="bold"),
         text_color=("#f0f6fc", "#f0f6fc")
     )
-    format_label.grid(row=row_counter, column=0, padx=30, pady=(0, 10), sticky="w")
+    format_label.grid(row=row_counter, column=0, padx=30, pady=(30, 10), sticky="w")
     row_counter += 1
     
     format_var = tk.StringVar(value=current_format)
@@ -408,6 +388,46 @@ def open_settings():
     clipboard_checkbox.grid(row=row_counter, column=0, padx=30, pady=(0, 20), sticky="w")
     row_counter += 1
     
+    resolution_popup_var = tk.BooleanVar(value=show_resolution_popup)
+    
+    def on_resolution_popup_change():
+        global show_resolution_popup
+        show_resolution_popup = resolution_popup_var.get()
+        save_settings_to_file()
+    
+    resolution_popup_checkbox = tk.CTkCheckBox(
+        scrollable_frame,
+        text="🎬 Show resolution selection popup for videos",
+        variable=resolution_popup_var,
+        command=on_resolution_popup_change,
+        font=tk.CTkFont(size=14),
+        text_color=("#f0f6fc", "#f0f6fc"),
+        fg_color=("#238636", "#238636"),
+        hover_color=("#2ea043", "#2ea043")
+    )
+    resolution_popup_checkbox.grid(row=row_counter, column=0, padx=30, pady=(0, 20), sticky="w")
+    row_counter += 1
+    
+    audio_quality_popup_var = tk.BooleanVar(value=show_audio_quality_popup)
+    
+    def on_audio_quality_popup_change():
+        global show_audio_quality_popup
+        show_audio_quality_popup = audio_quality_popup_var.get()
+        save_settings_to_file()
+    
+    audio_quality_popup_checkbox = tk.CTkCheckBox(
+        scrollable_frame,
+        text="🎵 Show audio quality selection popup for audio",
+        variable=audio_quality_popup_var,
+        command=on_audio_quality_popup_change,
+        font=tk.CTkFont(size=14),
+        text_color=("#f0f6fc", "#f0f6fc"),
+        fg_color=("#238636", "#238636"),
+        hover_color=("#2ea043", "#2ea043")
+    )
+    audio_quality_popup_checkbox.grid(row=row_counter, column=0, padx=30, pady=(0, 20), sticky="w")
+    row_counter += 1
+    
     credits_label = tk.CTkLabel(
         scrollable_frame,
         text="ℹ️ Credits:",
@@ -446,13 +466,15 @@ def open_settings():
         button_frame,
         text="💾 Save Settings",
         command=lambda: save_settings(
-            quality_var.get(), 
+            current_quality,
             format_var.get(), 
             folder_entry.get(), 
             metadata_var.get(),
             playlist_var.get(),
             batch_var.get(),
             clipboard_var.get(),
+            resolution_popup_var.get(),
+            audio_quality_popup_var.get(),
             settings_menu
         ),
         height=45,
@@ -471,9 +493,9 @@ def browse_folder(entry_widget):
         entry_widget.delete(0, "end")
         entry_widget.insert(0, folder_path)
 
-def save_settings(quality, format_type, download_folder, metadata, playlist_mode, batch_mode_setting, clipboard_monitoring_setting, window):
+def save_settings(quality, format_type, download_folder, metadata, playlist_mode, batch_mode_setting, clipboard_monitoring_setting, resolution_popup_setting, audio_quality_popup_setting, window):
     global current_quality, current_format, current_download_folder, preserve_metadata, is_playlist_mode
-    global batch_mode, clipboard_monitoring
+    global batch_mode, clipboard_monitoring, show_resolution_popup, show_audio_quality_popup
     
     current_quality = quality
     current_format = format_type
@@ -482,6 +504,8 @@ def save_settings(quality, format_type, download_folder, metadata, playlist_mode
     is_playlist_mode = playlist_mode
     batch_mode = batch_mode_setting
     clipboard_monitoring = clipboard_monitoring_setting
+    show_resolution_popup = resolution_popup_setting
+    show_audio_quality_popup = audio_quality_popup_setting
     
     save_settings_to_file()
     
@@ -704,7 +728,94 @@ def download_thread(url):
         if is_playlist_mode and is_playlist_url(url):
             playlist_info = get_playlist_info(url)
             if playlist_info:
-                app.after(0, lambda: status_label.configure(text=f"📋 Found playlist: {playlist_info['count']} videos"))
+                playlist_count = playlist_info['count']
+                app.after(0, lambda: status_label.configure(text=f"📋 Found playlist: {playlist_count} videos"))
+                
+                if playlist_count > 100:
+                    import tkinter.messagebox as msgbox
+                    response = msgbox.askyesno(
+                        "Large Playlist Detected", 
+                        f"This playlist contains {playlist_count} videos. This may take a very long time to download.\n\n"
+                        f"Do you want to continue?",
+                        icon="warning"
+                    )
+                    if not response:
+                        app.after(0, lambda: status_label.configure(text="❌ Playlist download cancelled by user"))
+                        format_display = current_format.upper()
+                        app.after(0, lambda: progress_bar.pack_forget())
+                        app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+                        return
+                
+                playlist_video_format = None
+                playlist_audio_format = None
+                
+                first_video_url = None
+                for entry in playlist_info['entries']:
+                    if entry:
+                        if 'url' in entry:
+                            first_video_url = entry['url']
+                            break
+                        elif 'id' in entry:
+                            entry_id = entry['id']
+                            if (len(entry_id) == 11 and 
+                                entry_id.replace('-', '').replace('_', '').isalnum() and
+                                not entry_id.startswith(('PL', 'UC', 'UU'))):
+                                first_video_url = f"https://www.youtube.com/watch?v={entry_id}"
+                                break
+                
+                if first_video_url:
+                    if current_format in ["mkv", "mp4"] and show_resolution_popup:
+                        app.after(0, lambda: status_label.configure(text="🔍 Getting available resolutions for playlist..."))
+                        available_formats = get_available_video_formats(first_video_url)
+                        
+                        if available_formats:
+                            result_container = {"format_id": None, "completed": False}
+                            
+                            def show_popup():
+                                result_container["format_id"] = show_resolution_selection_popup(first_video_url, available_formats)
+                                result_container["completed"] = True
+                            
+                            app.after(0, show_popup)
+                            
+                            while not result_container["completed"]:
+                                time.sleep(0.1)
+                            
+                            playlist_video_format = result_container["format_id"]
+                            
+                            if not playlist_video_format:
+                                app.after(0, lambda: status_label.configure(text="❌ Playlist download cancelled"))
+                                format_display = current_format.upper()
+                                app.after(0, lambda: progress_bar.pack_forget())
+                                app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+                                return
+                    
+                    elif current_format in ["mp3", "wav", "flac", "m4a"] and show_audio_quality_popup:
+                        app.after(0, lambda: status_label.configure(text="🔍 Getting available audio qualities for playlist..."))
+                        available_formats = get_available_audio_formats(first_video_url)
+                        
+                        result_container = {"format": None, "completed": False}
+                        
+                        def show_popup():
+                            result_container["format"] = show_audio_quality_selection_popup(first_video_url, available_formats)
+                            result_container["completed"] = True
+                        
+                        app.after(0, show_popup)
+                        
+                        while not result_container["completed"]:
+                            time.sleep(0.1)
+                        
+                        playlist_audio_format = result_container["format"]
+                        
+                        if not playlist_audio_format:
+                            app.after(0, lambda: status_label.configure(text="❌ Playlist download cancelled"))
+                            format_display = current_format.upper()
+                            app.after(0, lambda: progress_bar.pack_forget())
+                            app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+                            return
+                
+                app.after(0, lambda: progress_bar.pack(pady=(10, 0)))
+                successful_downloads = 0
+                failed_downloads = 0
                 
                 for i, entry in enumerate(playlist_info['entries']):
                     if entry:
@@ -724,24 +835,48 @@ def download_thread(url):
                                 print(f"Skipping entry with no valid URL/ID: {entry}")
                                 continue
                             
-                            app.after(0, lambda i=i: status_label.configure(text=f"⬇️ Downloading {i+1}/{playlist_info['count']}..."))
-                            app.after(0, lambda i=i: progress_bar.set((i+1) / playlist_info['count']))
+                            app.after(0, lambda i=i, total=playlist_count: status_label.configure(text=f"⬇️ Downloading {i+1}/{total}: {successful_downloads} done, {failed_downloads} failed"))
+                            app.after(0, lambda i=i, total=playlist_count: progress_bar.set((i+1) / total))
                             
-                            file_size = download_single_video(video_url, ffmpeg_path)
-                            total_size_mb += file_size
+                            file_size = download_single_video(video_url, ffmpeg_path, playlist_video_format, playlist_audio_format)
+                            if file_size == "CANCELLED":
+                                app.after(0, lambda: status_label.configure(text="❌ Playlist download cancelled"))
+                                return
+                            elif file_size > 0:
+                                successful_downloads += 1
+                                total_size_mb += file_size
+                            else:
+                                failed_downloads += 1
                         except Exception as video_error:
                             print(f"Failed to download video {i+1}: {video_error}")
-                            app.after(0, lambda i=i: status_label.configure(text=f"⚠️ Skipped video {i+1} (error)"))
+                            failed_downloads += 1
+                            app.after(0, lambda i=i, failed=failed_downloads: status_label.configure(text=f"⚠️ Skipped video {i+1} (error) - {failed} failed so far"))
                             continue
                 
-                app.after(0, lambda: status_label.configure(text="✅ Playlist download completed!"))
+                app.after(0, lambda: status_label.configure(text=f"✅ Playlist completed! {successful_downloads} successful, {failed_downloads} failed"))
             else:
                 app.after(0, lambda: status_label.configure(text="⚠️ Playlist info failed, downloading single video..."))
                 file_size = download_single_video(url, ffmpeg_path)
+                if file_size == "CANCELLED":
+                    format_display = current_format.upper()
+                    app.after(0, lambda: progress_bar.pack_forget())
+                    app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+                    return
                 total_size_mb += file_size
         else:
             file_size = download_single_video(url, ffmpeg_path)
+            if file_size == "CANCELLED":
+                format_display = current_format.upper()
+                app.after(0, lambda: progress_bar.pack_forget())
+                app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+                return
             total_size_mb += file_size
+        
+        if total_size_mb == 0:
+            format_display = current_format.upper()
+            app.after(0, lambda: progress_bar.pack_forget())
+            app.after(0, lambda: button.configure(state="normal", text=f"📥 Download {format_display}", fg_color=("#238636", "#238636")))
+            return
         
         end_time = time.time()
         duration_seconds = end_time - start_time
@@ -755,33 +890,366 @@ def download_thread(url):
     except Exception as e:
         handle_download_error(e)
 
+def show_resolution_selection_popup(url, available_formats):
+    """Show a popup to select video resolution"""
+    resolution_window = tk.CTkToplevel(app)
+    resolution_window.title("🎬 Select Video Resolution")
+    resolution_window.geometry("500x400")
+    resolution_window.configure(fg_color=("#0d1117", "#0d1117"))
+    resolution_window.transient(app)
+    resolution_window.grab_set()
+    resolution_window.resizable(False, False)
+    
+    resolution_window.update_idletasks()
+    x = (resolution_window.winfo_screenwidth() // 2) - (600 // 2)
+    y = (resolution_window.winfo_screenheight() // 2) - (500 // 2)
+    resolution_window.geometry(f"600x500+{x}+{y}")
+    
+    selected_format = {"format": None}
+    
+    header = tk.CTkLabel(
+        resolution_window,
+        text="🎬 Select Video Resolution",
+        font=tk.CTkFont(size=24, weight="bold"),
+        text_color=("#58a6ff", "#58a6ff")
+    )
+    header.pack(pady=(20, 30))
+    
+    scrollable_frame = tk.CTkScrollableFrame(
+        resolution_window,
+        width=450,
+        height=250,
+        corner_radius=15,
+        fg_color=("#161b22", "#161b22")
+    )
+    scrollable_frame.pack(padx=25, pady=(0, 20), fill="both", expand=True)
+    
+    format_var = tk.StringVar()
+    
+    if available_formats:
+        for i, fmt in enumerate(available_formats[:10]):
+            height = fmt.get('height', 0)
+            width = fmt.get('width', 0)
+            fps = fmt.get('fps', '')
+            vcodec = fmt.get('vcodec', '')
+            filesize = fmt.get('filesize', 0)
+            
+            if height and width:
+                resolution = f"{width}x{height}"
+            else:
+                resolution = fmt.get('resolution', 'Unknown')
+            
+            size_text = ""
+            if filesize and filesize > 0:
+                size_mb = filesize / (1024 * 1024)
+                if size_mb < 1024:
+                    size_text = f" (~{size_mb:.1f} MB)"
+                else:
+                    size_gb = size_mb / 1024
+                    size_text = f" (~{size_gb:.1f} GB)"
+            
+            fps_text = f" {fps}fps" if fps else ""
+            
+            display_text = f"📺 {resolution}{fps_text}{size_text}"
+            
+            radio_btn = tk.CTkRadioButton(
+                scrollable_frame,
+                text=display_text,
+                variable=format_var,
+                value=fmt['format_id'],
+                font=tk.CTkFont(size=14),
+                text_color=("#f0f6fc", "#f0f6fc"),
+                fg_color=("#238636", "#238636"),
+                hover_color=("#2ea043", "#2ea043")
+            )
+            radio_btn.pack(anchor="w", padx=20, pady=5)
+            
+            if i == 0:
+                format_var.set(fmt['format_id'])
+    else:
+        no_formats_label = tk.CTkLabel(
+            scrollable_frame,
+            text="No video formats available",
+            font=tk.CTkFont(size=14),
+            text_color=("#8b949e", "#8b949e")
+        )
+        no_formats_label.pack(pady=50)
+    
+    button_frame = tk.CTkFrame(resolution_window, fg_color="transparent")
+    button_frame.pack(pady=(0, 20), padx=25, fill="x")
+    button_frame.grid_columnconfigure((0, 1), weight=1)
+    
+    def on_cancel():
+        selected_format["format"] = None
+        resolution_window.destroy()
+    
+    def on_confirm():
+        selected_format["format"] = format_var.get()
+        resolution_window.destroy()
+    
+    cancel_button = tk.CTkButton(
+        button_frame,
+        text="❌ Cancel",
+        command=on_cancel,
+        height=45,
+        font=tk.CTkFont(size=14, weight="bold"),
+        fg_color=("#21262d", "#21262d"),
+        hover_color=("#30363d", "#30363d"),
+        text_color=("#8b949e", "#8b949e")
+    )
+    cancel_button.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+    
+    confirm_button = tk.CTkButton(
+        button_frame,
+        text="✅ Download Selected",
+        command=on_confirm,
+        height=45,
+        font=tk.CTkFont(size=14, weight="bold"),
+        fg_color=("#238636", "#238636"),
+        hover_color=("#2ea043", "#2ea043")
+    )
+    confirm_button.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+    
+    resolution_window.wait_window()
+    
+    return selected_format["format"]
+
+def show_audio_quality_selection_popup(url, available_formats):
+    """Show a popup to select audio quality"""
+    audio_quality_window = tk.CTkToplevel(app)
+    audio_quality_window.title("🎵 Select Audio Quality")
+    audio_quality_window.geometry("500x500")
+    audio_quality_window.configure(fg_color=("#0d1117", "#0d1117"))
+    audio_quality_window.transient(app)
+    audio_quality_window.grab_set()
+    audio_quality_window.resizable(False, False)
+    
+    audio_quality_window.update_idletasks()
+    x = (audio_quality_window.winfo_screenwidth() // 2) - (500 // 2)
+    y = (audio_quality_window.winfo_screenheight() // 2) - (500 // 2)
+    audio_quality_window.geometry(f"500x500+{x}+{y}")
+    
+    selected_quality = {"quality": None}
+    
+    header = tk.CTkLabel(
+        audio_quality_window,
+        text="🎵 Select Audio Quality",
+        font=tk.CTkFont(size=24, weight="bold"),
+        text_color=("#58a6ff", "#58a6ff")
+    )
+    header.pack(pady=(20, 20))
+    
+    scrollable_frame = tk.CTkScrollableFrame(
+        audio_quality_window,
+        width=450,
+        height=280,
+        corner_radius=15,
+        fg_color=("#161b22", "#161b22")
+    )
+    scrollable_frame.pack(padx=25, pady=(0, 15), fill="both", expand=True)
+    
+    quality_var = tk.StringVar()
+    
+    if available_formats:
+        for i, fmt in enumerate(available_formats[:8]):
+            abr = fmt.get('abr', 0)
+            filesize = fmt.get('filesize', 0)
+            
+            if abr:
+                quality_text = f"{int(abr)} kbps"
+            else:
+                quality_text = "Unknown quality"
+            
+            size_text = ""
+            if filesize and filesize > 0:
+                size_mb = filesize / (1024 * 1024)
+                if size_mb < 1024:
+                    size_text = f" (~{size_mb:.1f} MB)"
+                else:
+                    size_gb = size_mb / 1024
+                    size_text = f" (~{size_gb:.1f} GB)"
+            
+            display_text = f"🎵 {quality_text}{size_text}"
+            
+            radio_btn = tk.CTkRadioButton(
+                scrollable_frame,
+                text=display_text,
+                variable=quality_var,
+                value=fmt['format_id'],
+                font=tk.CTkFont(size=14),
+                text_color=("#f0f6fc", "#f0f6fc"),
+                fg_color=("#238636", "#238636"),
+                hover_color=("#2ea043", "#2ea043")
+            )
+            radio_btn.pack(anchor="w", padx=20, pady=5)
+            
+            if i == 0:
+                quality_var.set(fmt['format_id'])
+    else:
+        fallback_qualities = [
+            ("🎵 320 kbps (Best quality)", "320"),
+            ("🎵 256 kbps (High quality)", "256"),
+            ("🎵 192 kbps (Balanced)", "192"),
+            ("🎵 128 kbps (Small file)", "128")
+        ]
+        
+        for i, (label, value) in enumerate(fallback_qualities):
+            radio_btn = tk.CTkRadioButton(
+                scrollable_frame,
+                text=label,
+                variable=quality_var,
+                value=value,
+                font=tk.CTkFont(size=14),
+                text_color=("#f0f6fc", "#f0f6fc"),
+                fg_color=("#238636", "#238636"),
+                hover_color=("#2ea043", "#2ea043")
+            )
+            radio_btn.pack(anchor="w", padx=20, pady=5)
+            
+            if value == current_quality:
+                quality_var.set(value)
+            elif i == 0 and not quality_var.get():
+                quality_var.set(value)
+    
+    button_frame = tk.CTkFrame(audio_quality_window, fg_color="transparent")
+    button_frame.pack(pady=(10, 20), padx=25, fill="x")
+    button_frame.grid_columnconfigure((0, 1), weight=1)
+    
+    def on_cancel():
+        selected_quality["quality"] = None
+        audio_quality_window.destroy()
+    
+    def on_confirm():
+        selected_quality["quality"] = quality_var.get()
+        audio_quality_window.destroy()
+    
+    cancel_button = tk.CTkButton(
+        button_frame,
+        text="❌ Cancel",
+        command=on_cancel,
+        height=45,
+        font=tk.CTkFont(size=14, weight="bold"),
+        fg_color=("#21262d", "#21262d"),
+        hover_color=("#30363d", "#30363d"),
+        text_color=("#8b949e", "#8b949e")
+    )
+    cancel_button.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+    
+    confirm_button = tk.CTkButton(
+        button_frame,
+        text="✅ Select Quality",
+        command=on_confirm,
+        height=45,
+        font=tk.CTkFont(size=14, weight="bold"),
+        fg_color=("#238636", "#238636"),
+        hover_color=("#2ea043", "#2ea043")
+    )
+    confirm_button.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+    
+    audio_quality_window.wait_window()
+    
+    return selected_quality["quality"]
+
+def get_available_audio_formats(url):
+    """Get available audio formats for the URL"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            if info and 'formats' in info:
+                audio_formats = []
+                for fmt in info['formats']:
+                    if (fmt.get('acodec') != 'none' and 
+                        fmt.get('acodec') and
+                        fmt.get('vcodec') == 'none'):
+                        audio_formats.append(fmt)
+                
+                unique_formats = {}
+                for fmt in audio_formats:
+                    quality_key = fmt.get('quality', 0)
+                    abr = fmt.get('abr', 0)
+                    
+                    if abr:
+                        key = f"{int(abr)}k"
+                    elif quality_key:
+                        key = f"quality_{int(quality_key)}"
+                    else:
+                        key = fmt.get('format_id', 'unknown')
+                    
+                    if key not in unique_formats or (fmt.get('abr', 0) > unique_formats[key].get('abr', 0)):
+                        unique_formats[key] = fmt
+                
+                sorted_formats = sorted(unique_formats.values(), key=lambda x: x.get('abr', 0), reverse=True)
+                
+                return sorted_formats
+    except Exception as e:
+        print(f"Error getting audio formats: {e}")
+    
+    return []
+
+def get_available_video_formats(url):
+    """Get available video formats for the URL"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            if info and 'formats' in info:
+                video_formats = []
+                for fmt in info['formats']:
+                    if (fmt.get('vcodec') != 'none' and 
+                        fmt.get('vcodec') and
+                        fmt.get('height') and 
+                        fmt.get('width') and
+                        fmt.get('height') >= 240):
+                        video_formats.append(fmt)
+                
+                unique_formats = {}
+                for fmt in video_formats:
+                    key = f"{fmt.get('width')}x{fmt.get('height')}"
+                    if key not in unique_formats or fmt.get('tbr', 0) > unique_formats[key].get('tbr', 0):
+                        unique_formats[key] = fmt
+                
+                sorted_formats = sorted(unique_formats.values(), key=lambda x: x.get('height', 0), reverse=True)
+                
+                return sorted_formats
+    except Exception as e:
+        print(f"Error getting video formats: {e}")
+    
+    return []
+
 def format_selector(ctx):
     """ Select the best video and the best audio that won't result in an mkv.
     NOTE: This is just an example and does not handle all cases """
 
-    # formats are already sorted worst to best
     formats = ctx.get('formats')[::-1]
 
-    # acodec='none' means there is no audio
     best_video = next(f for f in formats
                       if f['vcodec'] != 'none' and f['acodec'] == 'none')
 
-    # find compatible audio extension
     audio_ext = {'mp4': 'm4a', 'webm': 'webm'}[best_video['ext']]
-    # vcodec='none' means there is no video
     best_audio = next(f for f in formats if (
         f['acodec'] != 'none' and f['vcodec'] == 'none' and f['ext'] == audio_ext))
 
-    # These are the minimum required fields for a merged format
     yield {
         'format_id': f'{best_video["format_id"]}+{best_audio["format_id"]}',
         'ext': best_video['ext'],
         'requested_formats': [best_video, best_audio],
-        # Must be + separated list of protocols
         'protocol': f'{best_video["protocol"]}+{best_audio["protocol"]}'
     }
 
-def download_single_video(url, ffmpeg_path):
+def download_single_video(url, ffmpeg_path, preset_video_format=None, preset_audio_format=None):
     
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -818,11 +1286,45 @@ def download_single_video(url, ffmpeg_path):
                 
                 safe_title = f"video_{int(time.time())}"
                                 
-            
             if current_format in ["mkv", "mp4"]:
-                ydl_opts = {
-                    'format': format_selector,
-                }
+                selected_format_id = preset_video_format
+                
+                if selected_format_id is None and show_resolution_popup:
+                    app.after(0, lambda: status_label.configure(text="🔍 Getting available resolutions..."))
+                    available_formats = get_available_video_formats(url)
+                    
+                    if available_formats:
+                        result_container = {"format_id": None, "completed": False}
+                        
+                        def show_popup():
+                            result_container["format_id"] = show_resolution_selection_popup(url, available_formats)
+                            result_container["completed"] = True
+                        
+                        app.after(0, show_popup)
+                        
+                        while not result_container["completed"]:
+                            time.sleep(0.1)
+                        
+                        selected_format_id = result_container["format_id"]
+                        
+                        if not selected_format_id:
+                            app.after(0, lambda: status_label.configure(text="❌ Download cancelled"))
+                            return "CANCELLED"
+                    else:
+                        app.after(0, lambda: status_label.configure(text="⚠️ No video formats found, using default..."))
+                        selected_format_id = None
+                
+                if selected_format_id:
+                    ydl_opts = {
+                        'format': f'{selected_format_id}+bestaudio/best',
+                        'outtmpl': os.path.join(temp_dir, "temp_file.%(ext)s"),
+                    }
+                else:
+                    ydl_opts = {
+                        'format': format_selector,
+                        'outtmpl': os.path.join(temp_dir, "temp_file.%(ext)s"),
+                    }
+                
                 app.after(0, lambda: status_label.configure(text="⬇️ Downloading video..."))
                 
                 try:
@@ -876,14 +1378,47 @@ def download_single_video(url, ffmpeg_path):
                     return file_size_mb
                     
             else:
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'outtmpl': temp_output,
-                    'ffmpeg_location': ffmpeg_path,
-                    'noplaylist': True,
-                    'ignoreerrors': True,
-                    'no_warnings': True
-                }
+                selected_format = preset_audio_format
+                
+                if selected_format is None and show_audio_quality_popup and current_format in ["mp3", "wav", "flac", "m4a"]:
+                    app.after(0, lambda: status_label.configure(text="🔍 Getting available audio qualities..."))
+                    available_formats = get_available_audio_formats(url)
+                    
+                    result_container = {"format": None, "completed": False}
+                    
+                    def show_popup():
+                        result_container["format"] = show_audio_quality_selection_popup(url, available_formats)
+                        result_container["completed"] = True
+                    
+                    app.after(0, show_popup)
+                    
+                    while not result_container["completed"]:
+                        time.sleep(0.1)
+                    
+                    selected_format = result_container["format"]
+                    
+                    if not selected_format:
+                        app.after(0, lambda: status_label.configure(text="❌ Download cancelled"))
+                        return "CANCELLED"
+                
+                if selected_format and not selected_format.isdigit():
+                    ydl_opts = {
+                        'format': selected_format,
+                        'outtmpl': temp_output,
+                        'ffmpeg_location': ffmpeg_path,
+                        'noplaylist': True,
+                        'ignoreerrors': True,
+                        'no_warnings': True
+                    }
+                else:
+                    ydl_opts = {
+                        'format': 'bestaudio/best',
+                        'outtmpl': temp_output,
+                        'ffmpeg_location': ffmpeg_path,
+                        'noplaylist': True,
+                        'ignoreerrors': True,
+                        'no_warnings': True
+                    }
                 
                 app.after(0, lambda: status_label.configure(text="🎵 Downloading audio..."))
                 
@@ -911,8 +1446,12 @@ def download_single_video(url, ffmpeg_path):
                     codec = codec_map.get(current_format, 'libmp3lame')
                     cmd = [ffmpeg_path, '-i', temp_file, '-acodec', codec]
                     
+                    quality_to_use = current_quality
+                    if selected_format and selected_format.isdigit():
+                        quality_to_use = selected_format
+                    
                     if current_format in ['mp3', 'm4a']:
-                        cmd.extend(['-ab', f'{current_quality}k'])
+                        cmd.extend(['-ab', f'{quality_to_use}k'])
                     
                     if preserve_metadata:
                         cmd.extend(['-metadata', f'title={safe_title}', '-metadata', f'artist={uploader}'])
@@ -989,7 +1528,7 @@ def indir_sadece_ses(url):
             process_batch_downloads(urls)
             return
         elif len(urls) == 1:
-            url = urls[0]  # Single URL from batch input
+            url = urls[0]
         else:
             status_label.configure(text="❌ No valid YouTube URLs found!")
             textbox.configure(border_color=("#f85149", "#f85149"))
@@ -1050,7 +1589,7 @@ def get_playlist_info(url):
             'extract_flat': True,
             'no_warnings': True,
             'ignoreerrors': True,
-            'playlistend': 50
+            'socket_timeout': 60,
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1121,7 +1660,6 @@ def get_playlist_info_full(url):
             'extract_flat': False,
             'no_warnings': True,
             'ignoreerrors': True,
-            'playlistend': 20
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1300,7 +1838,7 @@ def create_context_menu():
     
     def clear_text():
         textbox.delete("0.0", "end")
-        placeholder_text = "Paste YouTube URL here..." if not batch_mode else "Paste YouTube URLs here (one per line)..."
+        placeholder_text = "Paste YouTube URL here..." if not batch_mode else "Paste YouTube URLs here (one per line for batch)"
         textbox.insert("0.0", placeholder_text)
         textbox.configure(border_color=("#30363d", "#30363d"))
         status_label.configure(text="✅ Ready to download")
