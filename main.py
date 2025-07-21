@@ -694,6 +694,7 @@ def download_as_audio_fallback(url, ffmpeg_path, temp_dir):
         return 0
 
 def download_thread(url):
+   
     start_time = time.time()
     total_size_mb = 0
     
@@ -754,12 +755,37 @@ def download_thread(url):
     except Exception as e:
         handle_download_error(e)
 
+def format_selector(ctx):
+    """ Select the best video and the best audio that won't result in an mkv.
+    NOTE: This is just an example and does not handle all cases """
+
+    # formats are already sorted worst to best
+    formats = ctx.get('formats')[::-1]
+
+    # acodec='none' means there is no audio
+    best_video = next(f for f in formats
+                      if f['vcodec'] != 'none' and f['acodec'] == 'none')
+
+    # find compatible audio extension
+    audio_ext = {'mp4': 'm4a', 'webm': 'webm'}[best_video['ext']]
+    # vcodec='none' means there is no video
+    best_audio = next(f for f in formats if (
+        f['acodec'] != 'none' and f['vcodec'] == 'none' and f['ext'] == audio_ext))
+
+    # These are the minimum required fields for a merged format
+    yield {
+        'format_id': f'{best_video["format_id"]}+{best_audio["format_id"]}',
+        'ext': best_video['ext'],
+        'requested_formats': [best_video, best_audio],
+        # Must be + separated list of protocols
+        'protocol': f'{best_video["protocol"]}+{best_audio["protocol"]}'
+    }
+
 def download_single_video(url, ffmpeg_path):
     
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_output = os.path.join(temp_dir, "temp_file.%(ext)s")
-            
             video_title = None
             safe_title = None
             uploader = 'Unknown'
@@ -791,17 +817,12 @@ def download_single_video(url, ffmpeg_path):
                     return download_as_audio_fallback(url, ffmpeg_path, temp_dir)
                 
                 safe_title = f"video_{int(time.time())}"
+                                
             
             if current_format in ["mkv", "mp4"]:
                 ydl_opts = {
-                    'format': 'best',
-                    'outtmpl': temp_output,
-                    'ffmpeg_location': ffmpeg_path,
-                    'noplaylist': True,
-                    'ignoreerrors': True,
-                    'no_warnings': True
+                    'format': format_selector,
                 }
-                
                 app.after(0, lambda: status_label.configure(text="⬇️ Downloading video..."))
                 
                 try:
